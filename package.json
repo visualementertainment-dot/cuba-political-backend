@@ -1,0 +1,38 @@
+{
+  "name": "cuba-political-backend",
+  "version": "1.0.0",
+  "description": "Backend escalable para plataforma de noticias políticas de Cuba",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "cuba",
+    "news",
+    "express",
+    "mongodb",
+    "api"
+  ],
+  "author": "Tu Nombre",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^6.10.0",
+    "express-validator": "^7.3.2",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^7.5.0",
+    "node-cron": "^3.0.3",
+    "rss-parser": "^3.13.0",
+    "xss-clean": "^0.1.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Noticias Cuba</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f0f0f0; }
+        .header { background: #d32f2f; color: white; padding: 15px; text-align: center; }
+        .container { padding: 20px; max-width: 600px; margin: 0 auto; }
+        .source-card { background: white; margin: 10px 0; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .icon { font-size: 30px; }
+        .name { font-size: 18px; font-weight: bold; margin-top: 5px; }
+        .category { color: #666; margin-top: 5px; }
+        button { background: #d32f2f; color: white; border: none; padding: 10px; width: 100%; border-radius: 5px; margin-top: 10px; }
+        .tab { display: flex; margin-bottom: 20px; }
+        .tab button { background: #ddd; color: black; margin: 0 5px; }
+        .tab button.active { background: #d32f2f; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📰 Noticias Cuba</h1>
+    </div>
+    
+    <div class="container">
+        <div class="tab">
+            <button class="active" onclick="showFuentes()">📰 Fuentes</button>
+            <button onclick="showLogin()">👤 Login</button>
+        </div>
+        
+        <div id="fuentes-view">
+            <div id="sources-list">Cargando fuentes...</div>
+        </div>
+        
+        <div id="login-view" style="display:none">
+            <input type="email" id="email" placeholder="Email" style="width:100%; padding:10px; margin:5px 0">
+            <input type="password" id="password" placeholder="Contraseña" style="width:100%; padding:10px; margin:5px 0">
+            <button onclick="login()">Iniciar Sesión</button>
+            <button onclick="showRegister()">Registrarse</button>
+        </div>
+        
+        <div id="register-view" style="display:none">
+            <input type="text" id="reg-username" placeholder="Usuario" style="width:100%; padding:10px; margin:5px 0">
+            <input type="email" id="reg-email" placeholder="Email" style="width:100%; padding:10px; margin:5px 0">
+            <input type="password" id="reg-password" placeholder="Contraseña" style="width:100%; padding:10px; margin:5px 0">
+            <button onclick="register()">Registrarse</button>
+            <button onclick="showLogin()">Volver</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:5000/api' 
+            : `http://${window.location.hostname}:5000/api`;
+        
+        let token = localStorage.getItem('token');
+        
+        async function loadSources() {
+            try {
+                const response = await fetch(`${API_URL}/sources`);
+                const data = await response.json();
+                const sources = data.sources || data;
+                
+                const html = sources.map(source => `
+                    <div class="source-card">
+                        <div class="icon">${source.icon || '📰'}</div>
+                        <div class="name">${source.name}</div>
+                        <div class="category">${source.category}</div>
+                    </div>
+                `).join('');
+                
+                document.getElementById('sources-list').innerHTML = html;
+            } catch (error) {
+                document.getElementById('sources-list').innerHTML = 'Error al cargar fuentes. Asegúrate que el servidor esté corriendo.';
+            }
+        }
+        
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    token = data.token;
+                    localStorage.setItem('token', token);
+                    alert('Login exitoso');
+                    showFuentes();
+                } else {
+                    alert('Error: ' + (data.error || 'Credenciales inválidas'));
+                }
+            } catch (error) {
+                alert('Error de conexión: ' + error.message);
+            }
+        }
+        
+        async function register() {
+            const username = document.getElementById('reg-username').value;
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Registro exitoso. Ahora inicia sesión.');
+                    showLogin();
+                } else {
+                    alert('Error: ' + (data.error || data.errors?.[0]?.msg || 'Error en registro'));
+                }
+            } catch (error) {
+                alert('Error de conexión: ' + error.message);
+            }
+        }
+        
+        function showFuentes() {
+            document.getElementById('fuentes-view').style.display = 'block';
+            document.getElementById('login-view').style.display = 'none';
+            document.getElementById('register-view').style.display = 'none';
+            loadSources();
+        }
+        
+        function showLogin() {
+            document.getElementById('fuentes-view').style.display = 'none';
+            document.getElementById('login-view').style.display = 'block';
+            document.getElementById('register-view').style.display = 'none';
+        }
+        
+        function showRegister() {
+            document.getElementById('fuentes-view').style.display = 'none';
+            document.getElementById('login-view').style.display = 'none';
+            document.getElementById('register-view').style.display = 'block';
+        }
+        
+        // Cargar fuentes al iniciar
+        loadSources();
+    </script>
+</body>
+</html>
