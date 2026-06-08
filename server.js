@@ -10,6 +10,8 @@ const xss = require('xss-clean');
 const { PORT, isProduction } = require('./config/env');
 const errorHandler = require('./middleware/errorHandler');
 const mongoose = require('mongoose');
+const logger = require('./utils/logger');
+const { initializeScheduledTasks } = require('./cron/ingestNews');
 
 // Importar rutas
 const authRoutes = require('./routes/authRoutes');
@@ -19,6 +21,7 @@ const commentRoutes = require('./routes/commentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const sourceRoutes = require('./routes/sourceRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const ingestionRoutes = require('./routes/ingestionRoutes');
 
 const app = express();
 
@@ -29,7 +32,9 @@ app.use(helmet());
 
 // ============ CORS CONFIGURACIÓN ============
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.FRONTEND_URL || 'https://cuba-political.com'
+    : ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -83,7 +88,7 @@ app.use('/api/admin/', adminLimiter);
 app.get('/api', (req, res) => {
   res.json({
     message: 'Bienvenido a la API de Noticias Cuba',
-    version: '1.0.0',
+    version: '2.0.0',
     endpoints: {
       auth: '/api/auth',
       news: '/api/news',
@@ -92,6 +97,7 @@ app.get('/api', (req, res) => {
       user: '/api/user',
       notifications: '/api/notifications',
       admin: '/api/admin',
+      ingestion: '/api/ingestion',
       health: '/health'
     },
     status: 'online',
@@ -110,6 +116,7 @@ app.get('/health', async (req, res) => {
   });
 });
 
+// ============ REGISTRAR TODAS LAS RUTAS ============
 app.use('/api/auth', authRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/user', userRoutes);
@@ -117,22 +124,8 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/sources', sourceRoutes);
 app.use('/api/admin', adminRoutes);
-// ENDPOINT TEMPORAL - Resetea lecturas (SOLO PARA PRUEBAS - BORRAR DESPUÉS)
-app.get('/reset-reads', async (req, res) => {
-  try {
-    const Article = require('./models/Article');
-    const result = await Article.updateMany({}, { $set: { reads: 0 } });
-    console.log(`✅ Reseteadas ${result.modifiedCount} lecturas a 0`);
-    res.json({ 
-      success: true, 
-      message: `✅ ${result.modifiedCount} artículos actualizados a 0 lecturas`,
-      modifiedCount: result.modifiedCount 
-    });
-  } catch (err) {
-    console.error('❌ Error al resetear lecturas:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+app.use('/api/ingestion', ingestionRoutes);
+
 // Manejador de errores global (siempre al final)
 app.use(errorHandler);
 
@@ -140,60 +133,74 @@ app.use(errorHandler);
 
 const startServer = async () => {
   try {
+    logger.info('🚀 ===== INICIANDO SERVIDOR =====');
+
     // Conectar a MongoDB primero
     await connectDB();
-    console.log('✅ MongoDB conectado correctamente');
+    logger.info('✅ MongoDB conectado correctamente');
 
     // Ejecutar seed (fuentes y artículos de ejemplo)
     const seedDatabase = require('./seed');
     await seedDatabase();
-    console.log('✅ Seed completado');
+    logger.info('✅ Seed completado');
 
-    // ============ INICIAR SERVICIO RSS ============
-    // Importar el servicio RSS
-    const rssService = require('./services/rssService');
-    
-    // Esperar un poco para asegurar que las fuentes estén en la BD
-    setTimeout(async () => {
-      try {
-        await rssService.startAllFromDatabase();
-        console.log('✅ Servicio RSS iniciado correctamente');
-      } catch (err) {
-        console.error('❌ Error al iniciar servicio RSS:', err.message);
-      }
-    }, 3000);
+    // ============ INICIALIZAR TAREAS PROGRAMADAS ============
+    logger.info('📅 Inicializando CRON jobs...');
+    initializeScheduledTasks();
+    logger.info('✅ CRON jobs inicializados');
+
+    // ============ INICIAR SERVICIO RSS (LEGACY) ============
+    // Importar el servicio RSS antiguo (mantener compatibilidad)
+    try {
+      const rssService = require('./services/rssService');
+      
+      // Esperar un poco para asegurar que las fuentes estén en la BD
+      setTimeout(async () => {
+        try {
+          await rssService.startAllFromDatabase();
+          logger.info('✅ Servicio RSS (legacy) iniciado correctamente');
+        } catch (err) {
+          logger.error(`⚠️  Error al iniciar servicio RSS legacy: ${err.message}`);
+        }
+      }, 3000);
+    } catch (err) {
+      logger.warn('⚠️  Servicio RSS legacy no disponible');
+    }
 
     // Iniciar servidor después de todo
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-      console.log(`📦 Modo: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🔗 API disponible en: http://localhost:${PORT}/api`);
-      console.log(`❤️  Health check: http://localhost:${PORT}/health`);
-      console.log(`🔓 CORS permitiendo: http://localhost:5173 y http://localhost:3000`);
+      logger.info(`🚀 Servidor corriendo en puerto ${PORT}`);
+      logger.info(`📦 Modo: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`🔗 API disponible en: http://localhost:${PORT}/api`);
+      logger.info(`❤️  Health check: http://localhost:${PORT}/health`);
+      logger.info(`🔓 CORS permitiendo: ${corsOptions.origin.toString()}`);
+      logger.info('✅ ===== SERVIDOR LISTO =====');
     });
   } catch (err) {
-    console.error('❌ Error al iniciar el servidor:', err);
+    logger.error(`❌ Error fatal al iniciar el servidor: ${err.message}`);
     process.exit(1);
   }
 };
 
 // Manejar cierre graceful
 const gracefulShutdown = async () => {
-  console.log('\n🔄 Cerrando servidor...');
+  logger.info('🔄 Cerrando servidor...');
   
   // Detener servicio RSS
   try {
     const rssService = require('./services/rssService');
     rssService.stopAll();
-    console.log('✅ Servicio RSS detenido');
+    logger.info('✅ Servicio RSS detenido');
   } catch (err) {
     // El servicio puede no estar inicializado
   }
   
   if (mongoose.connection.readyState === 1) {
     await mongoose.connection.close();
-    console.log('✅ Conexión a MongoDB cerrada');
+    logger.info('✅ Conexión a MongoDB cerrada');
   }
+  
+  logger.info('👋 Servidor cerrado correctamente');
   process.exit(0);
 };
 
